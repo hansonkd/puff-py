@@ -1,10 +1,15 @@
 [tool.poetry]
 name = "puff-py"
-version = "0.1.4"
-description = ""
+version = "0.1.0"
+description = "Python support for Puff"
 authors = ["Kyle Hanson <me@khanson.io>"]
 license = "MIT"
 packages = [{include = "puff", from="."}, {include = "psycopg2", from="."}]
+homepage = "https://github.com/hansonkd/puff"
+repository = "https://github.com/hansonkd/puff-rs"
+include = [
+    "LICENSE",
+]
 
 [tool.poetry.dependencies]
 python = "^3.10"
