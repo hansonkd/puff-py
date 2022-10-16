@@ -1,3 +1,9 @@
+# Python for ☁ Puff ☁!
+
+`puff-py` provides support to run Python on the puff runtime.
+
+See the official [puff repository](https://github.com/hansonkd/puff) for more details.
+
 # Using Django with Puff
 
 Set up your project:

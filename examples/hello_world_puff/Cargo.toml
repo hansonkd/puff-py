@@ -1,0 +1,17 @@
+[package]
+name = "hello_world_puff"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+puff-rs = "0.1.0"
+
+#
+#[profile.release]
+#opt-level = 3
+#strip = true
+#debug = false
+#codegen-units = 1
+#lto = true

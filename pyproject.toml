@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "puff-py"
-version = "0.1.0"
+version = "0.1.1"
 description = "Python support for Puff"
 authors = ["Kyle Hanson <me@khanson.io>"]
 license = "MIT"
@@ -10,6 +10,7 @@ repository = "https://github.com/hansonkd/puff-rs"
 include = [
     "LICENSE",
 ]
+readme = "README.md"
 
 [tool.poetry.dependencies]
 python = "^3.10"
