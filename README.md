@@ -6,6 +6,16 @@ See the official [puff repository](https://github.com/hansonkd/puff) for more de
 
 There is also an integrated example with Django found in this repo's `/examples` folder [which gives specific guidance on how to use Django](https://github.com/hansonkd/puff-py/tree/main/examples/hello_world_puff)
 
+To use the example
+
+```bash
+cd ./examples/hello_world_puff/hello_world_py_app
+poetry install
+poetry run cargo run runserver
+```
+
+You may have to adjust your `PUFF_POSTGRES_URL` and `PUFF_REDIS_URL` to your local Postgres and redis instances to get it to run.
+
 # Using Django with Puff
 
 Set up your project:
