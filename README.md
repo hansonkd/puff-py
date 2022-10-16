@@ -4,6 +4,8 @@
 
 See the official [puff repository](https://github.com/hansonkd/puff) for more details.
 
+There is also an integrated example with Django found in this repo's `/examples` folder [which gives specific guidance on how to use Django](https://github.com/hansonkd/puff-py/tree/main/examples/hello_world_puff)
+
 # Using Django with Puff
 
 Set up your project:
