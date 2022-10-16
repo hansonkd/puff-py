@@ -9,7 +9,9 @@ There is also an integrated example with Django found in this repo's `/examples`
 To use the example
 
 ```bash
-cd ./examples/hello_world_puff/hello_world_py_app
+cd ./examples/hello_world_puff
+cargo build
+cd hello_world_py_app
 poetry install
 poetry run cargo run runserver
 ```

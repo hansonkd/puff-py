@@ -6,7 +6,7 @@ gql = global_graphql()
 
 
 def test_version():
-    assert __version__ == '0.1.0'
+    assert __version__ == "0.1.0"
 
 
 def test_gql():
@@ -19,16 +19,18 @@ def test_gql():
     }
     """
     result = gql.query(QUERY, {})
-    assert 'data' in result
-    assert 'errors' not in result
-    assert result['data']["hello_world"][0]["title"] == "hi from pg"
-    assert result['data']["hello_world"][0]["was_input"] == 3
+    assert "data" in result
+    assert "errors" not in result
+    assert result["data"]["hello_world"][0]["title"] == "hi from pg"
+    assert result["data"]["hello_world"][0]["was_input"] == 3
 
 
 def test_files():
     fn = "poetry.lock"
     result_bytes = puff.read_file_bytes(fn)  # Puff async function that runs in Tokio.
-    result_py_bytes = do_some_blocking_work(fn)  # Python blocking that spawns a thread to prevent pausing.
+    result_py_bytes = do_some_blocking_work(
+        fn
+    )  # Python blocking that spawns a thread to prevent pausing.
     assert len(result_bytes) > 0
     assert len(result_bytes) == len(result_py_bytes)
     assert result_bytes == result_py_bytes

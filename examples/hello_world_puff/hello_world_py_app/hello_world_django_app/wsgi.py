@@ -12,7 +12,7 @@ import os
 from django.core.wsgi import get_wsgi_application
 from django.contrib.staticfiles.handlers import StaticFilesHandler
 
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'hello_world_django_app.settings')
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "hello_world_django_app.settings")
 
 
 application = StaticFilesHandler(get_wsgi_application())

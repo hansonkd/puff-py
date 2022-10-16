@@ -7,13 +7,13 @@ from strawberry_django_plus.optimizer import DjangoOptimizerExtension
 from polls.models import Question, Choice
 
 
-
 @strawberry.django.type(Choice)
 class ChoiceType:
     id: auto
     question_id: auto
     choice_text: auto
     votes: int
+
 
 @strawberry.django.type(Question)
 class QuestionType:
@@ -28,7 +28,11 @@ class Query:
     questions: List[QuestionType] = strawberry.django.field()
 
 
-schema = strawberry.Schema(query=Query, config=StrawberryConfig(auto_camel_case=False), extensions=[
-    # other extensions...
-    DjangoOptimizerExtension,
-])
+schema = strawberry.Schema(
+    query=Query,
+    config=StrawberryConfig(auto_camel_case=False),
+    extensions=[
+        # other extensions...
+        DjangoOptimizerExtension,
+    ],
+)

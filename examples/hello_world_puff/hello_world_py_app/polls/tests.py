@@ -27,8 +27,7 @@ def test_polls():
     """
 
     result = gql.query(QUERY, {}, connection.connection.postgres_client)
-    assert 'data' in result
-    assert 'errors' not in result
-    assert result['data']["questions"][0]["question_text"] == "hi"
-    assert result['data']["questions"][0]["choices"][0]["choice_text"] == 'choice 1'
-
+    assert "data" in result
+    assert "errors" not in result
+    assert result["data"]["questions"][0]["question_text"] == "hi"
+    assert result["data"]["questions"][0]["choices"][0]["choice_text"] == "choice 1"

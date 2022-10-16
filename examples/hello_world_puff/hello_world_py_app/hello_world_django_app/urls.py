@@ -20,6 +20,6 @@ from django.views.decorators.csrf import csrf_exempt
 from .schema import schema
 
 urlpatterns = [
-    path('admin/', admin.site.urls),
+    path("admin/", admin.site.urls),
     path("strawberrry", csrf_exempt(GraphQLView.as_view(schema=schema))),
 ]
