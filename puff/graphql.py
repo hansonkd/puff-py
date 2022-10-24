@@ -91,6 +91,7 @@ class FieldDescription:
 
     return_type: Any
     arguments: Dict[str, Any]
+    is_async: bool = False
     safe_without_context: bool = False
     producer: Optional[Callable[[Any], Any]] = None
     acceptor: Optional[Callable[[Callable[[Any], None]], None]] = None
@@ -348,6 +349,7 @@ def load_aggro_type(t, all_types, input_types, is_input):
 
             depends_on = getattr(method, "depends_on", None)
             safe_without_context = getattr(method, "safe_without_context", False)
+            is_async = inspect.iscoroutinefunction(method)
             wrapped_method = wrap_method(method, type_hints)
 
             desc = FieldDescription(
@@ -356,6 +358,7 @@ def load_aggro_type(t, all_types, input_types, is_input):
                 arguments=arguments,
                 acceptor=acceptor,
                 producer=wrapped_method,
+                is_async=is_async,
                 depends_on=depends_on,
             )
             properties[method_name] = desc
