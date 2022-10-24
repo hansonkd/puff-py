@@ -1,14 +1,32 @@
+import asyncio
 import sys
+import threading
 import traceback
 import contextvars
 import dataclasses
 from importlib import import_module
 from typing import Any, Optional, List, Dict
-from threading import Thread
+from threading import Thread, local
 import queue
 import functools
 
 from greenlet import greenlet
+
+thread_local = local()
+ASYNCIO = object()
+GREENLET = object()
+
+
+def set_async_type(async_type):
+    thread_local.async_type = async_type
+
+
+def is_asyncio():
+    return getattr(thread_local, "async_type", None) == ASYNCIO
+
+
+def is_greenlet():
+    return getattr(thread_local, "async_type", None) == GREENLET
 
 
 def blocking(func):
@@ -27,6 +45,7 @@ class RustObjects(object):
     """A class that holds functions and objects from Rust."""
 
     is_puff: bool = False
+    asyncio_loop = None
     global_state: Any
 
     def global_redis_getter(self):
@@ -40,6 +59,15 @@ class RustObjects(object):
 
     def global_gql_getter(self):
         return None
+
+    def dispatch_greenlet(self, ret, f):
+        raise NotImplemented
+
+    def dispatch_asyncio(self, ret, f):
+        raise NotImplemented
+
+    def dispatch_asyncio_coro(self, ret, f):
+        raise NotImplemented
 
     def read_file_bytes(self, rr: Any, fn: str) -> bytes:
         pass
@@ -99,6 +127,7 @@ class MainThread(Thread):
         super().__init__()
 
     def run(self):
+        set_async_type(GREENLET)
         if self.on_thread_start is not None:
             self.on_thread_start()
         self.main_greenlet = greenlet.getcurrent()
@@ -109,15 +138,6 @@ class MainThread(Thread):
             pass
 
     def spawn(self, task_function, args, kwargs, ret_func):
-        greenlet = self.new_greenlet()
-
-        def wrapped_ret(val, e):
-            self.complete_greenlet(greenlet)
-            ret_func(val, e)
-
-        self.spawn_local(task_function, args, kwargs, wrapped_ret)
-
-    def spawn_local(self, task_function, args, kwargs, ret_func):
         task_function_wrapped = self.generate_spawner(task_function)
         task = Task(
             args=args,
@@ -363,7 +383,35 @@ class GraphqlClient:
         )
 
 
+def wrap_async_asyncio(f):
+    loop = rust_objects.asyncio_loop
+    if loop is None:
+        raise RuntimeError("AsyncIO not configured in Puff RuntimeConfig")
+    future = loop.create_future()
+
+    def wrapped_ret(val, e):
+        if e is None:
+            loop.call_soon_threadsafe(future.set_result, val)
+        else:
+            loop.call_soon_threadsafe(future.set_exception, e)
+
+    f(wrapped_ret)
+
+    return future
+
+
 def wrap_async(f, join=True):
+    if is_asyncio():
+        return wrap_async_asyncio(f)
+    elif is_greenlet():
+        return wrap_async_greenlet(f, join=join)
+    else:
+        raise RuntimeError(
+            "You cannot call Puff functions outside of greenlets or asyncio"
+        )
+
+
+def wrap_async_greenlet(f, join=True):
     this_greenlet = greenlet.getcurrent()
     thread = parent_thread.get()
 
@@ -389,7 +437,7 @@ def spawn(f, *args, **kwargs):
         greenlet_obj.set_result(val, e)
         thread.return_result(this_greenlet)
 
-    thread.spawn_local(f, args, kwargs, return_result, greenlet_obj=greenlet_obj)
+    thread.spawn(f, args, kwargs, return_result, greenlet_obj=greenlet_obj)
 
     return greenlet_obj
 
@@ -502,10 +550,6 @@ def patch_asgi_ref_local():
     class SyncToAsync(sync.SyncToAsync):
         @staticmethod
         def get_current_task():
-            """
-            Implementation of asyncio.current_task()
-            that returns None if there is no task.
-            """
             if context_id := context_id_var.get(None):
                 return context_id
 
@@ -513,7 +557,52 @@ def patch_asgi_ref_local():
             context_id_var.set(context_id)
             return context_id
 
+        async def __call__(self, *args, **kwargs):
+            if is_asyncio():
+                context = contextvars.copy_context()
+
+                def wrapped():
+                    child = functools.partial(self.func, *args, **kwargs)
+                    return context.run(child)
+
+                return await wrap_async_asyncio(
+                    lambda ret: rust_objects.dispatch_greenlet(ret, wrapped)
+                )
+            else:
+                return await super().__call__(*args, **kwargs)
+
+    class AsyncToSync(sync.AsyncToSync):
+        def __call__(self, *args, **kwargs):
+            if is_greenlet():
+                if rust_objects.asyncio_loop is None:
+                    raise RuntimeError("AsyncIO not configured in Puff RuntimeConfig")
+
+                # Get the source thread
+                source_thread = threading.current_thread()
+                context = [contextvars.copy_context()]
+
+                async def await_f():
+                    call_result = rust_objects.asyncio_loop.create_future()
+                    await self.main_wrap(
+                        args,
+                        kwargs,
+                        call_result,
+                        source_thread,
+                        sys.exc_info(),
+                        context,
+                    )
+                    return await call_result
+
+                return wrap_async_greenlet(
+                    lambda ret: rust_objects.dispatch_asyncio(ret, await_f), join=True
+                )
+            else:
+                return super().__call__(*args, **kwargs)
+
     sync.SyncToAsync = SyncToAsync
+    sync.AsyncToSync = AsyncToSync
+    sync.async_to_sync = AsyncToSync
+    sync.sync_to_async = SyncToAsync
 
 
 def patch_django():

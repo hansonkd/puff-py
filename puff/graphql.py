@@ -57,6 +57,11 @@ def needs_puff(func):
     return func
 
 
+def pure(func):
+    func.safe_without_context = True
+    return func
+
+
 def borrow_db_context(func):
     func.safe_without_context = False
     return func
@@ -86,7 +91,7 @@ class FieldDescription:
 
     return_type: Any
     arguments: Dict[str, Any]
-    safe_without_context: bool = True
+    safe_without_context: bool = False
     producer: Optional[Callable[[Any], Any]] = None
     acceptor: Optional[Callable[[Callable[[Any], None]], None]] = None
     depends_on: Optional[List[str]] = None
@@ -342,7 +347,7 @@ def load_aggro_type(t, all_types, input_types, is_input):
                     )
 
             depends_on = getattr(method, "depends_on", None)
-            safe_without_context = getattr(method, "safe_without_context", True)
+            safe_without_context = getattr(method, "safe_without_context", False)
             wrapped_method = wrap_method(method, type_hints)
 
             desc = FieldDescription(
