@@ -7,7 +7,6 @@ import dataclasses
 from importlib import import_module
 from typing import Any, Optional, List, Dict
 from threading import Thread, local
-import queue
 import functools
 
 from greenlet import greenlet
@@ -58,6 +57,12 @@ class RustObjects(object):
         return None
 
     def global_gql_getter(self):
+        return None
+
+    def global_task_queue_getter(self):
+        return None
+
+    def global_http_client_getter(self):
         return None
 
     def dispatch_greenlet(self, ret, f):
@@ -134,6 +139,7 @@ class MainThread(Thread):
         self.event_loop_processor = greenlet(self.loop_commands)
         self.read_from_queue_processor = greenlet(self.read_from_queue)
         self.event_loop_processor.switch()
+
         while self.read_from_queue_processor.switch():
             pass
 
@@ -179,6 +185,7 @@ class MainThread(Thread):
             event.process()
 
     def read_from_queue(self):
+        parent_thread.set(self)
         while not self.has_shutdown():
             event = self.event_queue.get()
             self.event_loop_processor.switch(event)
@@ -203,9 +210,7 @@ class MainThread(Thread):
         return self.main_greenlet.switch(True)
 
 
-def start_event_loop(on_thread_start=None):
-    q = queue.Queue()
-
+def start_event_loop(q, on_thread_start=None):
     loop_thread = MainThread(q, on_thread_start=on_thread_start)
     loop_thread.start()
 

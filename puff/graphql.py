@@ -205,8 +205,11 @@ def wrap_method(method, type_hints):
     def wrapped_method(*args, **kwargs):
         if len(args) == 1:
             ctx = args[0]
+            new_args = (GraphQLContext(ctx),)
         else:
             ctx = args[1]
+            new_args = (args[0], GraphQLContext(ctx))
+
         if django_connection is not None:
             django_connection.connection = None
         set_connection_override(ctx.connection())
@@ -221,7 +224,7 @@ def wrap_method(method, type_hints):
             elif is_dataclass(arg_field_type) and isinstance(arg_value, dict):
                 new_obj = arg_field_type(**arg_value)
                 kwargs[arg_name] = new_obj
-        r = method(*args, **kwargs)
+        r = method(*new_args, **kwargs)
         set_connection_override(None)
         if django_connection is not None:
             django_connection.connection = None
@@ -367,10 +370,27 @@ def load_aggro_type(t, all_types, input_types, is_input):
             pass
 
 
+class GraphQLContext:
+    def __init__(self, ctx):
+        self.ctx = ctx
+
+    @property
+    def auth_token(self):
+        return self.ctx.auth_token
+
+    @property
+    def connection(self):
+        return self.ctx.connection()
+
+    def parent_values(self, parent_fields):
+        return self.ctx.parent_values(parent_fields)
+
+
 def make_acceptor(method):
     def acceptor(initiate, ctx, lookahead):
+        real_ctx = GraphQLContext(ctx)
         set_connection_override(ctx.connection())
-        for result in method(ctx, **lookahead):
+        for result in method(real_ctx, **lookahead):
 
             def render_fn(*args, **kwargs):
                 return result
