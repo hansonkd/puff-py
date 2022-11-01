@@ -77,6 +77,9 @@ class RustObjects(object):
     def read_file_bytes(self, rr: Any, fn: str) -> bytes:
         pass
 
+    def sleep_ms(self, rr: Any, fn: int) -> bytes:
+        pass
+
 
 rust_objects = RustObjects()
 
@@ -309,6 +312,9 @@ class PubSubMessage:
     body: bytes
     text: Optional[str]
 
+    def json(self) -> Any:
+        pass
+
 
 class PubSubConnection:
     def __init__(self, conn):
@@ -329,6 +335,11 @@ class PubSubConnection:
     def publish_bytes(self, channel: str, message: bytes) -> bool:
         return wrap_async(
             lambda rr: self.conn.publish_bytes(rr, channel, message), join=True
+        )
+
+    def publish_json(self, channel: str, message: Any) -> bool:
+        return wrap_async(
+            lambda rr: self.conn.publish_json(rr, channel, message), join=True
         )
 
 
@@ -355,6 +366,16 @@ class PubSubClient:
     ) -> bool:
         return wrap_async(
             lambda rr: self.client().publish_bytes_as(
+                rr, connection_id, channel, message
+            ),
+            join=True,
+        )
+
+    def publish_json_as(
+            self, connection_id: str, channel: str, message: Any
+    ) -> bool:
+        return wrap_async(
+            lambda rr: self.client().publish_json_as(
                 rr, connection_id, channel, message
             ),
             join=True,
@@ -434,6 +455,21 @@ def wrap_async_greenlet(f, join=True):
 
 
 def spawn(f, *args, **kwargs):
+    if is_asyncio():
+        return spawn_from_asyncio(f, *args, **kwargs)
+    elif is_greenlet():
+        return spawn_from_greenlet(f, *args, **kwargs)
+    else:
+        raise RuntimeError(
+            "You cannot call Puff functions outside of greenlets or asyncio"
+        )
+
+
+def spawn_from_asyncio(f, *args, **kwargs):
+    raise RuntimeError("Don't use spawn from AsyncIO, instead use asgiref.sync_to_async")
+
+
+def spawn_from_greenlet(f, *args, **kwargs):
     thread = parent_thread.get()
     this_greenlet = greenlet.getcurrent()
     greenlet_obj = thread.new_greenlet()
@@ -442,7 +478,10 @@ def spawn(f, *args, **kwargs):
         greenlet_obj.set_result(val, e)
         thread.return_result(this_greenlet)
 
-    thread.spawn(f, args, kwargs, return_result, greenlet_obj=greenlet_obj)
+    thread.spawn(f, args, kwargs, return_result)
+
+    # yield the thread to start other greenlet
+    sleep_ms(0)
 
     return greenlet_obj
 
@@ -487,6 +526,10 @@ def global_graphql():
 
 def global_state():
     return rust_objects.global_state
+
+
+def sleep_ms(time_to_sleep_ms: int):
+    return wrap_async(lambda rr: rust_objects.sleep_ms(rr, time_to_sleep_ms), join=True)
 
 
 def spawn_blocking(f, *args, **kwargs):

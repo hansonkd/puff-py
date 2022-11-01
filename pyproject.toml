@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "puff-py"
-version = "0.1.4"
+version = "0.1.5"
 description = "Python support for Puff"
 authors = ["Kyle Hanson <me@khanson.io>"]
 license = "MIT"
@@ -15,6 +15,7 @@ readme = "README.md"
 [tool.poetry.dependencies]
 python = "^3.10"
 greenlet = "^1.1"
+asgiref = "^3.5.2"
 
 
 [tool.poetry.dev-dependencies]

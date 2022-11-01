@@ -43,7 +43,7 @@ class TaskQueue:
         return wrap_async(lambda r: self.tq.task_result(r, task_id), join=True)
 
     def wait_for_task_result(
-        self, task_id: bytes, poll_interval_ms: int, timeout_ms: int
+        self, task_id: bytes, poll_interval_ms: int = 100, timeout_ms: int = 10000
     ) -> Optional[Any]:
         return wrap_async(
             lambda r: self.tq.wait_for_task_result(
