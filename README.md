@@ -28,8 +28,8 @@ cd my_puff_proj
 cargo add puff-rs
 poetry new my_puff_proj_py
 cd my_puff_proj_py
-poetry install puff-py
-poetry install django
+poetry add puff-py
+poetry add django
 poetry run django-admin startproject hello_world_django_app .
 ```
 

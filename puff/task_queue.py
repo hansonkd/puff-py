@@ -25,6 +25,7 @@ class TaskQueue:
         timeout_ms: int,
         keep_results_for_ms: int,
         async_fn: bool,
+        trigger_locally: bool,
     ) -> bytes:
         return wrap_async(
             lambda r: self.tq.add_task(
@@ -35,6 +36,7 @@ class TaskQueue:
                 timeout_ms,
                 keep_results_for_ms,
                 async_fn,
+                trigger_locally,
             ),
             join=True,
         )
@@ -59,7 +61,19 @@ class TaskQueue:
         scheduled_time_unix_ms=None,
         timeout_ms=DEFAULT_TIMEOUT,
         keep_results_for_ms=DEFAULT_KEEP_RESULTS_FOR,
+        trigger=True,
     ) -> bytes:
+        """
+        Schedule a top-level importable function to be executed.
+
+        Queues will compete to schedule the job as soon as it is first available. A job is available to be executed if
+        scheduled_time_unix_ms < current_milli_time() at the time of the queue is looking and if all previous jobs have
+        been completed. Once a job has been started, no other queues will execute the job until after `timeout_ms` have
+        passed and no results are posted.
+
+        trigger will cause one task queue that is waiting for new tasks to immediately look at the queue and pull a job.
+        If trigger is False, the queue will trigger on the next loop, this will cause a slight delay of up to 1 second.
+        """
         scheduled_time_unix_ms = scheduled_time_unix_ms or current_milli_time()
         mod_name = inspect.getmodule(func).__name__
         func_name = func.__name__
@@ -72,8 +86,8 @@ class TaskQueue:
             timeout_ms,
             keep_results_for_ms,
             async_fn,
+            trigger,
         )
 
 
-def global_task_queue():
-    return TaskQueue(rust_objects.global_task_queue_getter())
+global_task_queue = TaskQueue(rust_objects.global_task_queue_getter())

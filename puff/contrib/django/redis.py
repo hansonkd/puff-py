@@ -1,6 +1,6 @@
 from django.core.cache.backends.redis import RedisCacheClient, RedisCache
 
-from puff import global_redis
+from puff.redis import global_redis
 
 redis_client = global_redis()
 

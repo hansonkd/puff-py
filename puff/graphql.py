@@ -20,8 +20,8 @@ from typing import (
     Iterator,
 )
 
-from puff import wrap_async
-from puff.postgres import set_connection_override
+from . import wrap_async, rust_objects
+from .postgres import set_connection_override
 
 try:
     from django.db import connection as django_connection
@@ -417,3 +417,30 @@ def type_to_description(schema):
     if subscription:
         load_aggro_type(subscription, all_types, input_types, False)
     return all_types, input_types
+
+
+class GraphqlClient:
+    def __init__(self, client=None):
+        self.gql = client
+
+    def client(self):
+        if self.gql is None:
+            self.gql = rust_objects.global_gql_getter()
+        return self.gql
+
+    def query(
+        self, query: str, variables: Dict[str, Any], connection: Optional[Any] = None
+    ) -> Any:
+        """
+        Query the configured GraphQL schema.
+
+        Provide an optional connection object to use as the DB connection to query SQL.
+        If no connection is specified, a new connection will be used.
+        """
+        return wrap_async(
+            lambda rr: self.client().query(rr, query, variables, conn=connection),
+            join=True,
+        )
+
+
+global_graphql = GraphqlClient()

@@ -3,7 +3,9 @@ import subprocess
 import sys
 
 
-def cargo():
+def run_cargo():
     my_env = os.environ.copy()
     my_env["PYTHONPATH"] = ":".join(sys.path)
-    subprocess.run(["cargo"] + sys.argv[1:], env=my_env)
+    print(":".join(sys.path))
+    print(sys.argv[1:])
+    subprocess.run(["cargo", "run"] + sys.argv[1:], env=my_env)

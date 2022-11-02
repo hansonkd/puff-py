@@ -149,5 +149,4 @@ class HttpClient:
         return self.request("OPTIONS", url, **kwargs)
 
 
-def global_http_client():
-    return HttpClient(rust_objects.global_http_client_getter())
+global_http_client = HttpClient(rust_objects.global_http_client_getter())

@@ -1,11 +1,10 @@
-import asyncio
 import sys
 import threading
 import traceback
 import contextvars
 import dataclasses
 from importlib import import_module
-from typing import Any, Optional, List, Dict
+from typing import Any, Optional, List, Dict, Union, Tuple
 from threading import Thread, local
 import functools
 
@@ -14,6 +13,9 @@ from greenlet import greenlet
 thread_local = local()
 ASYNCIO = object()
 GREENLET = object()
+
+
+global_state = None
 
 
 def set_async_type(async_type):
@@ -45,7 +47,6 @@ class RustObjects(object):
 
     is_puff: bool = False
     asyncio_loop = None
-    global_state: Any
 
     def global_redis_getter(self):
         return None
@@ -245,168 +246,7 @@ class Greenlet:
         return id(self)
 
 
-def stob(s):
-    if isinstance(s, str):
-        return s.encode()
-    return s
-
-
-class RedisClient:
-    def __init__(self, client=None):
-        self.redis = None
-
-    def client(self):
-        if self.redis is None:
-            self.redis = rust_objects.global_redis_getter()
-        return self.redis
-
-    def get(self, key: bytes) -> Optional[bytes]:
-        return wrap_async(lambda rr: self.client().get(rr, stob(key)), join=True)
-
-    def set(self, key: bytes, value: bytes, nx=None, ex=None):
-        return wrap_async(
-            lambda rr: self.client().set(rr, stob(key), stob(value), ex, nx), join=True
-        )
-
-    def mset(self, values: Dict[bytes, bytes], nx=None):
-        vals = [(stob(k), stob(v)) for k, v in values.items()]
-        return wrap_async(lambda rr: self.client().mset(rr, vals, nx), join=True)
-
-    def mget(self, keys: List[bytes]) -> List[bytes]:
-        keys = [stob(key) for key in keys]
-        return wrap_async(lambda rr: self.client().mget(rr, keys), join=True)
-
-    def persist(self, key: bytes) -> bool:
-        return wrap_async(lambda rr: self.client().persist(rr, stob(key)), join=True)
-
-    def expire(self, key: bytes, seconds: int) -> bool:
-        return wrap_async(
-            lambda rr: self.client().expire(rr, stob(key), seconds), join=True
-        )
-
-    def delete(self, key: bytes) -> bool:
-        return wrap_async(lambda rr: self.client().delete(rr, stob(key)), join=True)
-
-    def incr(self, key: bytes, delta: int) -> int:
-        return wrap_async(
-            lambda rr: self.client().incr(rr, stob(key), delta), join=True
-        )
-
-    def decr(self, key: bytes, delta: int) -> int:
-        return wrap_async(
-            lambda rr: self.client().decr(rr, stob(key), delta), join=True
-        )
-
-    def command(self, command: List[bytes]) -> Any:
-        return wrap_async(lambda rr: self.client().command(rr, command), join=True)
-
-    def pipeline(self):
-        return self
-
-    def execute(self):
-        return self
-
-
-class PubSubMessage:
-    from_connection_id: str
-    body: bytes
-    text: Optional[str]
-
-    def json(self) -> Any:
-        pass
-
-
-class PubSubConnection:
-    def __init__(self, conn):
-        self.conn = conn
-
-    def who_am_i(self) -> str:
-        return self.conn.who_am_i()
-
-    def receive(self) -> Optional[PubSubMessage]:
-        return wrap_async(lambda rr: self.conn.receive(rr), join=True)
-
-    def subscribe(self, channel: str) -> bool:
-        return wrap_async(lambda rr: self.conn.subscribe(rr, channel), join=True)
-
-    def publish(self, channel: str, message: str) -> bool:
-        return wrap_async(lambda rr: self.conn.publish(rr, channel, message), join=True)
-
-    def publish_bytes(self, channel: str, message: bytes) -> bool:
-        return wrap_async(
-            lambda rr: self.conn.publish_bytes(rr, channel, message), join=True
-        )
-
-    def publish_json(self, channel: str, message: Any) -> bool:
-        return wrap_async(
-            lambda rr: self.conn.publish_json(rr, channel, message), join=True
-        )
-
-
-class PubSubClient:
-    def __init__(self, client=None):
-        self.pubsub = client
-
-    def client(self):
-        if self.pubsub is None:
-            self.pubsub = rust_objects.global_pubsub_getter()
-        return self.pubsub
-
-    def new_connection_id(self) -> str:
-        return self.client().new_connection_id()
-
-    def publish_as(self, connection_id: str, channel: str, message: str) -> bool:
-        return wrap_async(
-            lambda rr: self.client().publish_as(rr, connection_id, channel, message),
-            join=True,
-        )
-
-    def publish_bytes_as(
-        self, connection_id: str, channel: str, message: bytes
-    ) -> bool:
-        return wrap_async(
-            lambda rr: self.client().publish_bytes_as(
-                rr, connection_id, channel, message
-            ),
-            join=True,
-        )
-
-    def publish_json_as(
-            self, connection_id: str, channel: str, message: Any
-    ) -> bool:
-        return wrap_async(
-            lambda rr: self.client().publish_json_as(
-                rr, connection_id, channel, message
-            ),
-            join=True,
-        )
-
-    def connection(self) -> PubSubConnection:
-        if self.pubsub is None:
-            self.pubsub = rust_objects.global_pubsub_getter()
-
-        return PubSubConnection(self.client().connection())
-
-    def connection_with_id(self, connection_id: str) -> PubSubConnection:
-        return PubSubConnection(self.client().connection_with_id(connection_id))
-
-
-class GraphqlClient:
-    def __init__(self, client=None):
-        self.gql = client
-
-    def client(self):
-        if self.gql is None:
-            self.gql = rust_objects.global_gql_getter()
-        return self.gql
-
-    def query(
-        self, query: str, variables: Dict[str, Any], connection: Optional[Any] = None
-    ) -> Any:
-        return wrap_async(
-            lambda rr: self.client().query(rr, query, variables, conn=connection),
-            join=True,
-        )
+Bytelike = Union[str, bytes]
 
 
 def wrap_async_asyncio(f):
@@ -466,7 +306,9 @@ def spawn(f, *args, **kwargs):
 
 
 def spawn_from_asyncio(f, *args, **kwargs):
-    raise RuntimeError("Don't use spawn from AsyncIO, instead use asgiref.sync_to_async")
+    raise RuntimeError(
+        "Don't use spawn from AsyncIO, instead use asgiref.sync_to_async"
+    )
 
 
 def spawn_from_greenlet(f, *args, **kwargs):
@@ -487,6 +329,9 @@ def spawn_from_greenlet(f, *args, **kwargs):
 
 
 def join_all(greenlets):
+    """
+    Wait for all greenlets to finish.
+    """
     if not greenlets:
         return []
     thread = greenlets[0].thread
@@ -496,6 +341,9 @@ def join_all(greenlets):
 
 
 def join_iter(greenlets):
+    """
+    Wait for all greenlets to finish, yielding results as they become available.
+    """
     if not greenlets:
         return None
 
@@ -512,27 +360,20 @@ def join_iter(greenlets):
         pending = pending - remove
 
 
-def global_redis():
-    return RedisClient()
-
-
-def global_pubsub():
-    return PubSubClient()
-
-
-def global_graphql():
-    return GraphqlClient()
-
-
-def global_state():
-    return rust_objects.global_state
-
-
 def sleep_ms(time_to_sleep_ms: int):
+    """
+    Sleep for the specified time.
+    """
     return wrap_async(lambda rr: rust_objects.sleep_ms(rr, time_to_sleep_ms), join=True)
 
 
 def spawn_blocking(f, *args, **kwargs):
+    """
+    Spawn a function on a new thread.
+    """
+    if not is_greenlet():
+        raise RuntimeError("Blocking functions can only be spawned from a greenlet")
+
     thread = parent_thread.get()
     child_thread = start_event_loop(on_thread_start=thread.on_thread_start)
     this_greenlet = greenlet.getcurrent()
@@ -560,7 +401,7 @@ def spawn_blocking_from_rust(on_thread_start, f, args, kwargs, return_result):
 
 def cached_import(module_path, class_name):
     # Check whether module is loaded and fully initialized.
-    if not ((module := sys.modules.get(module_path))):
+    if not (module := sys.modules.get(module_path)):
         module = import_module(module_path)
 
     return getattr(module, class_name)
