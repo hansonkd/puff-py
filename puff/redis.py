@@ -7,9 +7,10 @@ class RedisClient:
         self.redis = None
 
     def client(self):
-        if self.redis is None:
-            self.redis = rust_objects.global_redis_getter()
-        return self.redis
+        rc = self.redis
+        if rc is None:
+            self.redis = rc = rust_objects.global_redis_getter()
+        return rc
 
     def get(self, key: Bytelike) -> Optional[bytes]:
         return wrap_async(lambda rr: self.client().get(rr, key), join=True)

@@ -70,9 +70,10 @@ class PubSubClient:
         self.pubsub = client
 
     def client(self):
-        if self.pubsub is None:
-            self.pubsub = rust_objects.global_pubsub_getter()
-        return self.pubsub
+        ps = self.pubsub
+        if ps is None:
+            self.pubsub = ps = rust_objects.global_pubsub_getter()
+        return ps
 
     def new_connection_id(self) -> str:
         """

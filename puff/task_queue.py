@@ -14,8 +14,14 @@ def current_milli_time():
 
 
 class TaskQueue:
-    def __init__(self, rust_tq):
+    def __init__(self, rust_tq=None):
         self.tq = rust_tq
+
+    def client(self):
+        tq = self.tq
+        if self.tq is None:
+            self.tq = tq = rust_objects.global_task_queue_getter()
+        return tq
 
     def add_task(
         self,
@@ -25,10 +31,10 @@ class TaskQueue:
         timeout_ms: int,
         keep_results_for_ms: int,
         async_fn: bool,
-        trigger_locally: bool,
+        trigger: bool,
     ) -> bytes:
         return wrap_async(
-            lambda r: self.tq.add_task(
+            lambda r: self.client().add_task(
                 r,
                 func_path,
                 param,
@@ -36,19 +42,19 @@ class TaskQueue:
                 timeout_ms,
                 keep_results_for_ms,
                 async_fn,
-                trigger_locally,
+                trigger,
             ),
             join=True,
         )
 
     def task_result(self, task_id: bytes) -> Optional[Any]:
-        return wrap_async(lambda r: self.tq.task_result(r, task_id), join=True)
+        return wrap_async(lambda r: self.client().task_result(r, task_id), join=True)
 
     def wait_for_task_result(
         self, task_id: bytes, poll_interval_ms: int = 100, timeout_ms: int = 10000
     ) -> Optional[Any]:
         return wrap_async(
-            lambda r: self.tq.wait_for_task_result(
+            lambda r: self.client().wait_for_task_result(
                 r, task_id, poll_interval_ms, timeout_ms
             ),
             join=True,
@@ -90,4 +96,4 @@ class TaskQueue:
         )
 
 
-global_task_queue = TaskQueue(rust_objects.global_task_queue_getter())
+global_task_queue = TaskQueue()

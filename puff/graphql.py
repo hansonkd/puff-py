@@ -23,10 +23,17 @@ from typing import (
 from . import wrap_async, rust_objects
 from .postgres import set_connection_override
 
+
+class Apps:
+    ready = False
+
+
 try:
+    from django.apps import apps
     from django.db import connection as django_connection
 except ImportError:
     django_connection = None
+    apps = Apps()
 
 
 def nested_dataclass(*args, **kwargs):
@@ -210,7 +217,7 @@ def wrap_method(method, type_hints):
             ctx = args[1]
             new_args = (args[0], GraphQLContext(ctx))
 
-        if django_connection is not None:
+        if apps.ready and django_connection is not None:
             django_connection.connection = None
         set_connection_override(ctx.connection())
         for arg_name, arg_value in kwargs.items():
@@ -226,7 +233,7 @@ def wrap_method(method, type_hints):
                 kwargs[arg_name] = new_obj
         r = method(*new_args, **kwargs)
         set_connection_override(None)
-        if django_connection is not None:
+        if apps.ready and django_connection is not None:
             django_connection.connection = None
         return r
 
@@ -397,7 +404,7 @@ def make_acceptor(method):
 
             wrap_async(lambda r: initiate(r, render_fn), join=True)
         set_connection_override(None)
-        if django_connection is not None:
+        if apps.ready and django_connection is not None:
             django_connection.connection = None
 
     return acceptor
@@ -424,9 +431,10 @@ class GraphqlClient:
         self.gql = client
 
     def client(self):
-        if self.gql is None:
-            self.gql = rust_objects.global_gql_getter()
-        return self.gql
+        gql = self.gql
+        if gql is None:
+            self.gql = gql = rust_objects.global_gql_getter()
+        return gql
 
     def query(
         self, query: str, variables: Dict[str, Any], connection: Optional[Any] = None
