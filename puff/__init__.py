@@ -1,10 +1,11 @@
+import queue
 import sys
 import threading
 import traceback
 import contextvars
 import dataclasses
 from importlib import import_module
-from typing import Any, Optional, List, Dict, Union, Tuple
+from typing import Any, Union
 from threading import Thread, local
 import functools
 
@@ -214,7 +215,9 @@ class MainThread(Thread):
         return self.main_greenlet.switch(True)
 
 
-def start_event_loop(q, on_thread_start=None):
+def start_event_loop(q=None, on_thread_start=None):
+    if q is None:
+        q = queue.Queue()
     loop_thread = MainThread(q, on_thread_start=on_thread_start)
     loop_thread.start()
 

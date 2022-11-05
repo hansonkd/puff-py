@@ -1,7 +1,8 @@
 __version__ = "0.1.0"
 
 import puff
-from puff import graphql, global_pubsub
+from puff import graphql
+from puff.pubsub import global_pubsub as pubsub
 from puff.contrib.django import query_and_params
 from dataclasses import dataclass
 from typing import Optional, Tuple, List, Any, Iterable
@@ -14,7 +15,6 @@ from polls.models import Choice, Question
 
 
 CHANNEL = "my_puff_chat_channel"
-pubsub = global_pubsub()
 
 
 @dataclass

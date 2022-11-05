@@ -1,8 +1,6 @@
 from django.core.cache.backends.redis import RedisCacheClient, RedisCache
 
-from puff.redis import global_redis
-
-redis_client = global_redis()
+from puff.redis import global_redis as redis_client
 
 
 class PuffRedisCacheClient(RedisCacheClient):
@@ -12,5 +10,6 @@ class PuffRedisCacheClient(RedisCacheClient):
 
 class PuffRedisCache(RedisCache):
     def __init__(self, server, params):
+        super().__init__(server, params)
         self._class = PuffRedisCacheClient
         self._options = params.get("OPTIONS", {})
