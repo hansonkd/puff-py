@@ -28,32 +28,32 @@ class PubSubConnection:
         """
         Block until a new message from one of the subscribed channels
         """
-        return wrap_async(lambda rr: self.conn.receive(rr), join=True)
+        return wrap_async(lambda rr: self.conn.receive(rr))
 
     def subscribe(self, channel: str) -> bool:
         """
         Subscribe to recevie new messages from channel.
         """
-        return wrap_async(lambda rr: self.conn.subscribe(rr, channel), join=True)
+        return wrap_async(lambda rr: self.conn.subscribe(rr, channel))
 
     def unsubscribe(self, channel: str) -> bool:
         """
         Unscubscribe from new messages from channel.
         """
-        return wrap_async(lambda rr: self.conn.unsubscribe(rr, channel), join=True)
+        return wrap_async(lambda rr: self.conn.unsubscribe(rr, channel))
 
     def publish(self, channel: str, message: str) -> bool:
         """
         Publish a message on the channel as a string.
         """
-        return wrap_async(lambda rr: self.conn.publish(rr, channel, message), join=True)
+        return wrap_async(lambda rr: self.conn.publish(rr, channel, message))
 
     def publish_bytes(self, channel: str, message: bytes) -> bool:
         """
         Publish a message on the channel as raw bytes.
         """
         return wrap_async(
-            lambda rr: self.conn.publish_bytes(rr, channel, message), join=True
+            lambda rr: self.conn.publish_bytes(rr, channel, message)
         )
 
     def publish_json(self, channel: str, message: Any) -> bool:
@@ -61,7 +61,7 @@ class PubSubConnection:
         Encode a Python object into JSON and send it to the channel.
         """
         return wrap_async(
-            lambda rr: self.conn.publish_json(rr, channel, message), join=True
+            lambda rr: self.conn.publish_json(rr, channel, message)
         )
 
 
@@ -87,7 +87,6 @@ class PubSubClient:
         """
         return wrap_async(
             lambda rr: self.client().publish_as(rr, connection_id, channel, message),
-            join=True,
         )
 
     def publish_bytes_as(
@@ -99,8 +98,7 @@ class PubSubClient:
         return wrap_async(
             lambda rr: self.client().publish_bytes_as(
                 rr, connection_id, channel, message
-            ),
-            join=True,
+            )
         )
 
     def publish_json_as(self, connection_id: str, channel: str, message: Any) -> bool:
@@ -110,8 +108,7 @@ class PubSubClient:
         return wrap_async(
             lambda rr: self.client().publish_json_as(
                 rr, connection_id, channel, message
-            ),
-            join=True,
+            )
         )
 
     def connection(self) -> PubSubConnection:

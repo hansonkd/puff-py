@@ -43,12 +43,11 @@ class TaskQueue:
                 keep_results_for_ms,
                 async_fn,
                 trigger,
-            ),
-            join=True,
+            )
         )
 
     def task_result(self, task_id: bytes) -> Optional[Any]:
-        return wrap_async(lambda r: self.client().task_result(r, task_id), join=True)
+        return wrap_async(lambda r: self.client().task_result(r, task_id))
 
     def wait_for_task_result(
         self, task_id: bytes, poll_interval_ms: int = 100, timeout_ms: int = 10000
@@ -56,8 +55,7 @@ class TaskQueue:
         return wrap_async(
             lambda r: self.client().wait_for_task_result(
                 r, task_id, poll_interval_ms, timeout_ms
-            ),
-            join=True,
+            )
         )
 
     def schedule_function(

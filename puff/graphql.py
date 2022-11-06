@@ -3,8 +3,6 @@ import inspect
 from dataclasses import dataclass, fields, is_dataclass
 from functools import wraps
 from typing import (
-    TypeVar,
-    Generic,
     Any,
     Optional,
     Dict,
@@ -21,7 +19,7 @@ from typing import (
 )
 
 from . import wrap_async, rust_objects
-from .postgres import set_connection_override
+from .postgres import set_connection_override, PostgresConnection
 
 
 class Apps:
@@ -76,26 +74,15 @@ def borrow_db_context(func):
 
 NoneType = type(None)
 
-T = TypeVar("T")
-
-
-class SQLResponse(Generic[T]):
-    def __init__(self, query: str) -> None:
-        self.query: str = query
-
 
 @dataclass
 class ParameterDescription:
-    """Class for keeping track of an item in inventory."""
-
     param_type: Any
     default: Any
 
 
 @dataclass
 class FieldDescription:
-    """Class for keeping track of an item in inventory."""
-
     return_type: Any
     arguments: Dict[str, Any]
     is_async: bool = False
@@ -107,18 +94,7 @@ class FieldDescription:
 
 
 @dataclass
-class ObjectDescription:
-    """Class for keeping track of an item in inventory."""
-
-    attribute_fields: Dict[str, FieldDescription]
-    object_fields: Dict[str, FieldDescription]
-    class_fields: Dict[str, FieldDescription]
-
-
-@dataclass
 class TypeDescription:
-    """Class for keeping track of an item in inventory."""
-
     type_info: str
     optional: bool
     inner_type: Optional["TypeDescription"] = None
@@ -402,7 +378,7 @@ def make_acceptor(method):
             def render_fn(*args, **kwargs):
                 return result
 
-            wrap_async(lambda r: initiate(r, render_fn), join=True)
+            wrap_async(lambda r: initiate(r, render_fn))
         set_connection_override(None)
         if apps.ready and django_connection is not None:
             django_connection.connection = None
@@ -410,35 +386,68 @@ def make_acceptor(method):
     return acceptor
 
 
-def type_to_description(schema):
+Description = Dict[str, FieldDescription]
+Descriptions = Dict[str, Description]
+
+
+@dataclass
+class AuthRejection:
+    status_code: int = 403
+    message: str = "Access Denied"
+    headers: dict = None
+    is_rejection: bool = True
+
+
+@dataclass
+class SchemaDescription:
+    input_types: Descriptions
+    all_types: Descriptions
+    auth_function: Optional[Callable[[Any], Union[Any, AuthRejection]]] = None
+    auth_async: bool = False
+
+
+SchemaInput = Union[dataclass, SchemaDescription]
+
+
+def type_to_description(schema: SchemaInput) -> SchemaDescription:
+    if isinstance(schema, SchemaDescription):
+        return schema
+
     schema_fields = {f.name: f.type for f in fields(schema)}
     all_types = {}
     input_types = {}
     query = schema_fields["query"]
     mutation = schema_fields.get("mutation", None)
     subscription = schema_fields.get("subscription", None)
+    auth = schema_fields.get("auth", None)
+    auth_async = False
+    if auth and inspect.iscoroutinefunction(auth):
+        auth_async = True
 
     load_aggro_type(query, all_types, input_types, False)
     if mutation:
         load_aggro_type(mutation, all_types, input_types, False)
     if subscription:
         load_aggro_type(subscription, all_types, input_types, False)
-    return all_types, input_types
+    return SchemaDescription(all_types=all_types, input_types=input_types, auth_function=auth, auth_async=auth_async)
 
 
 class GraphqlClient:
-    def __init__(self, client=None):
+    def __init__(self, client=None, client_fn=None):
         self.gql = client
+        self.client_fn = client_fn or rust_objects.global_gql_getter
 
     def client(self):
         gql = self.gql
         if gql is None:
-            self.gql = gql = rust_objects.global_gql_getter()
+            self.gql = gql = self.client_fn()
         return gql
 
     def query(
-        self, query: str, variables: Dict[str, Any], connection: Optional[Any] = None
+            self, query: str, variables: Dict[str, Any], connection: PostgresConnection = None, auth_token: str = None
     ) -> Any:
+        conn = connection and connection.postgres_client
+
         """
         Query the configured GraphQL schema.
 
@@ -446,9 +455,13 @@ class GraphqlClient:
         If no connection is specified, a new connection will be used.
         """
         return wrap_async(
-            lambda rr: self.client().query(rr, query, variables, conn=connection),
+            lambda rr: self.client().query(rr, query, variables, conn, auth_token),
             join=True,
         )
 
 
 global_graphql = GraphqlClient()
+
+
+def internal_graphql(name: str = "default"):
+    return GraphqlClient(client_fn=lambda: rust_objects.global_internal_gql_getter(name))
