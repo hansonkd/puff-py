@@ -16,9 +16,7 @@ class RedisClient:
         return wrap_async(lambda rr: self.client().get(rr, key))
 
     def set(self, key: Bytelike, value: Bytelike, nx=None, ex=None):
-        return wrap_async(
-            lambda rr: self.client().set(rr, key, value, ex, nx)
-        )
+        return wrap_async(lambda rr: self.client().set(rr, key, value, ex, nx))
 
     def mset(self, values: Dict[Bytelike, Bytelike], nx=None):
         if isinstance(values, dict):
@@ -63,9 +61,7 @@ class RedisClient:
         return wrap_async(lambda rr: self.client().rpush(rr, key, value))
 
     def rpoplpush(self, key: Bytelike, destination: Bytelike) -> int:
-        return wrap_async(
-            lambda rr: self.client().rpoplpush(rr, key, destination)
-        )
+        return wrap_async(lambda rr: self.client().rpoplpush(rr, key, destination))
 
     def command(self, command: List[Bytelike]) -> Any:
         return wrap_async(lambda rr: self.client().command(rr, command))

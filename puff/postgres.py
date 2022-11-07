@@ -33,31 +33,31 @@ class TypeObject(object):
         return self != other and other < self.values
 
     def __repr__(self):
-        return 'TypeObject' + str(self.value_names)
+        return "TypeObject" + str(self.value_names)
 
 
 def _binary(string):
     if isinstance(string, str):
-        return string.encode('utf-8')
+        return string.encode("utf-8")
     return bytes(string)
 
 
-STRING = TypeObject('TEXT', 'VARCHAR')
+STRING = TypeObject("TEXT", "VARCHAR")
 """The type codes of TEXT result columns compare equal to this constant."""
 
-BINARY = TypeObject('BYTEA')
+BINARY = TypeObject("BYTEA")
 """The type codes of BLOB result columns compare equal to this constant."""
 
-NUMBER = TypeObject('INT2', 'INT4', 'INT8', 'FLOAT4', 'FLOAT8')
+NUMBER = TypeObject("INT2", "INT4", "INT8", "FLOAT4", "FLOAT8")
 """The type codes of numeric result columns compare equal to this constant."""
 
-DATETIME = TypeObject('TIMESTAMPZ', 'TIMESTAMP')
+DATETIME = TypeObject("TIMESTAMPZ", "TIMESTAMP")
 """The type codes of datetime result columns compare equal to this constant."""
 
-DATE = TypeObject('DATE')
+DATE = TypeObject("DATE")
 """The type codes of date result columns compare equal to this constant."""
 
-TIME = TypeObject('TIME')
+TIME = TypeObject("TIME")
 """The type codes of date result columns compare equal to this constant."""
 
 
@@ -192,6 +192,7 @@ class PostgresConnection:
     @property
     def DatabaseError(self):
         return sys.modules[__name__].DatabaseError
+
     @property
     def OperationalError(self):
         return sys.modules[__name__].OperationalError
@@ -219,9 +220,7 @@ class PostgresConnection:
     @autocommit.setter
     def autocommit(self, value):
         self._autocommit = value
-        wrap_async(
-            lambda rr: self.postgres_client.set_auto_commit(rr, value)
-        )
+        wrap_async(lambda rr: self.postgres_client.set_auto_commit(rr, value))
 
     def set_client_encoding(self, encoding, *args, **kwargs):
         if encoding != "UTF8":

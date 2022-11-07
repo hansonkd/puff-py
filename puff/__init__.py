@@ -252,13 +252,15 @@ class Greenlet:
 Bytelike = Union[str, bytes]
 
 
-def wrap_async_asyncio(f):
+def wrap_async_asyncio(f, wrap_return=None):
     loop = rust_objects.asyncio_loop
     if loop is None:
         raise RuntimeError("AsyncIO not configured in Puff RuntimeConfig")
     future = loop.create_future()
 
     def wrapped_ret(val, e):
+        if e is None and wrap_return is not None:
+            val = wrap_return(val)
         if e is None:
             loop.call_soon_threadsafe(future.set_result, val)
         else:
@@ -269,24 +271,26 @@ def wrap_async_asyncio(f):
     return future
 
 
-def wrap_async(f, join=True):
+def wrap_async(f, join=True, wrap_return=None):
     if is_asyncio():
-        return wrap_async_asyncio(f)
+        return wrap_async_asyncio(f, wrap_return=wrap_return)
     elif is_greenlet():
-        return wrap_async_greenlet(f, join=join)
+        return wrap_async_greenlet(f, join=join, wrap_return=wrap_return)
     else:
         raise RuntimeError(
             "You cannot call Puff functions outside of greenlets or asyncio"
         )
 
 
-def wrap_async_greenlet(f, join=True):
+def wrap_async_greenlet(f, join=True, wrap_return=None):
     this_greenlet = greenlet.getcurrent()
     thread = parent_thread.get()
 
     greenlet_obj = thread.new_greenlet()
 
     def return_result(r, e):
+        if e is None and wrap_return is not None:
+            r = wrap_return(r)
         greenlet_obj.set_result(r, e)
         thread.return_result(this_greenlet)
 

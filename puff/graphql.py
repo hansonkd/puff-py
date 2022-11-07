@@ -1,4 +1,5 @@
 import collections.abc
+import functools
 import inspect
 from dataclasses import dataclass, fields, is_dataclass
 from functools import wraps
@@ -22,6 +23,11 @@ from . import wrap_async, rust_objects
 from .postgres import set_connection_override, PostgresConnection
 
 
+@dataclass
+class EmptyObject:
+    pass
+
+
 class Apps:
     ready = False
 
@@ -38,7 +44,7 @@ def nested_dataclass(*args, **kwargs):
     def wrapper(cls):
         cls = dataclass(cls, **kwargs)
         original_init = cls.__init__
-        cls.__init__ = wrap_method(original_init, cls.__annotations__)
+        cls.__init__ = wrap_method(original_init, cls.__annotations__, False)
         return cls
 
     return wrapper(args[0]) if args else wrapper
@@ -150,10 +156,10 @@ CONTEXT_VAR = "parents"
 def get_type_name(t):
     if isinstance(t, str):
         return t
-    type_name = t.__name__
-    if hasattr(t, "__typename__"):
-        type_name = t.__object_name__
-    return type_name
+    try:
+        return t.__typename__
+    except AttributeError:
+        return t.__name__
 
 
 def expand_typehints(type_hints):
@@ -181,43 +187,86 @@ def expand_typehints(type_hints):
     return expanded_hints
 
 
-def wrap_method(method, type_hints):
+def wrap_method(method, type_hints, is_async=False):
     expanded_hints = expand_typehints(type_hints)
 
-    @wraps(method)
-    def wrapped_method(*args, **kwargs):
-        if len(args) == 1:
-            ctx = args[0]
-            new_args = (GraphQLContext(ctx),)
-        else:
-            ctx = args[1]
-            new_args = (args[0], GraphQLContext(ctx))
+    if is_async:
 
-        if apps.ready and django_connection is not None:
-            django_connection.connection = None
-        set_connection_override(ctx.connection())
-        for arg_name, arg_value in kwargs.items():
-            is_list, arg_field_type = expanded_hints.get(arg_name, None)
+        @wraps(method)
+        async def wrapped_method(*args, **kwargs):
+            if len(args) == 1:
+                ctx = args[0]
+                new_args = (GraphQLContext(ctx),)
+            else:
+                ctx = args[1]
+                new_args = (args[0], GraphQLContext(ctx))
 
-            if is_list and is_dataclass(arg_field_type) and isinstance(arg_value, list):
-                new_obj = [
-                    arg_field_type(**v) if isinstance(v, dict) else v for v in arg_value
-                ]
-                kwargs[arg_name] = new_obj
-            elif is_dataclass(arg_field_type) and isinstance(arg_value, dict):
-                new_obj = arg_field_type(**arg_value)
-                kwargs[arg_name] = new_obj
-        r = method(*new_args, **kwargs)
-        set_connection_override(None)
-        if apps.ready and django_connection is not None:
-            django_connection.connection = None
-        return r
+            if apps.ready and django_connection is not None:
+                django_connection.connection = None
+            set_connection_override(ctx.connection())
+            for arg_name, arg_value in kwargs.items():
+                is_list, arg_field_type = expanded_hints.get(arg_name, None)
+
+                if (
+                    is_list
+                    and is_dataclass(arg_field_type)
+                    and isinstance(arg_value, list)
+                ):
+                    new_obj = [
+                        arg_field_type(**v) if isinstance(v, dict) else v
+                        for v in arg_value
+                    ]
+                    kwargs[arg_name] = new_obj
+                elif is_dataclass(arg_field_type) and isinstance(arg_value, dict):
+                    new_obj = arg_field_type(**arg_value)
+                    kwargs[arg_name] = new_obj
+            r = await method(*new_args, **kwargs)
+            set_connection_override(None)
+            if apps.ready and django_connection is not None:
+                django_connection.connection = None
+            return r
+
+    else:
+
+        @wraps(method)
+        def wrapped_method(*args, **kwargs):
+            if len(args) == 1:
+                ctx = args[0]
+                new_args = (GraphQLContext(ctx),)
+            else:
+                ctx = args[1]
+                new_args = (args[0], GraphQLContext(ctx))
+
+            if apps.ready and django_connection is not None:
+                django_connection.connection = None
+            set_connection_override(ctx.connection())
+            for arg_name, arg_value in kwargs.items():
+                is_list, arg_field_type = expanded_hints.get(arg_name, None)
+
+                if (
+                    is_list
+                    and is_dataclass(arg_field_type)
+                    and isinstance(arg_value, list)
+                ):
+                    new_obj = [
+                        arg_field_type(**v) if isinstance(v, dict) else v
+                        for v in arg_value
+                    ]
+                    kwargs[arg_name] = new_obj
+                elif is_dataclass(arg_field_type) and isinstance(arg_value, dict):
+                    new_obj = arg_field_type(**arg_value)
+                    kwargs[arg_name] = new_obj
+            r = method(*new_args, **kwargs)
+            set_connection_override(None)
+            if apps.ready and django_connection is not None:
+                django_connection.connection = None
+            return r
 
     return wrapped_method
 
 
-def load_aggro_type(t, all_types, input_types, is_input):
-    type_name = get_type_name(t)
+def load_aggro_type(t, all_types, input_types, is_input, name=None):
+    type_name = name or get_type_name(t)
 
     properties = {}
     if is_input:
@@ -299,7 +348,8 @@ def load_aggro_type(t, all_types, input_types, is_input):
             return_t = signature.return_annotation
             origin = get_origin(return_t)
             acceptor = None
-            wrapped_method = wrap_method(method, type_hints)
+            is_async = inspect.iscoroutinefunction(method)
+            wrapped_method = wrap_method(method, type_hints, is_async=is_async)
             if origin in (
                 Iterator,
                 Iterable,
@@ -309,7 +359,7 @@ def load_aggro_type(t, all_types, input_types, is_input):
                 iterable_args = get_args(return_t)
                 return_t = iterable_args[0]
                 origin = get_origin(return_t)
-                acceptor = make_acceptor(wrapped_method)
+                acceptor = make_acceptor(wrapped_method, is_async)
 
             if origin in (Tuple, tuple):
                 tuple_args = get_args(return_t)
@@ -335,7 +385,7 @@ def load_aggro_type(t, all_types, input_types, is_input):
 
             depends_on = getattr(method, "depends_on", None)
             safe_without_context = getattr(method, "safe_without_context", False)
-            is_async = inspect.iscoroutinefunction(method)
+
             wrapped_method = wrap_method(method, type_hints)
 
             desc = FieldDescription(
@@ -358,8 +408,8 @@ class GraphQLContext:
         self.ctx = ctx
 
     @property
-    def auth_token(self):
-        return self.ctx.auth_token
+    def auth(self):
+        return self.ctx.auth
 
     @property
     def connection(self):
@@ -369,21 +419,31 @@ class GraphQLContext:
         return self.ctx.parent_values(parent_fields)
 
 
-def make_acceptor(method):
-    def acceptor(initiate, ctx, lookahead):
-        real_ctx = GraphQLContext(ctx)
-        set_connection_override(ctx.connection())
-        for result in method(real_ctx, **lookahead):
+def make_acceptor(method, is_async):
+    if is_async:
 
-            def render_fn(*args, **kwargs):
-                return result
+        async def acceptor(initiate, ctx, lookahead):
+            async for result in method(ctx, **lookahead):
 
-            wrap_async(lambda r: initiate(r, render_fn))
-        set_connection_override(None)
-        if apps.ready and django_connection is not None:
-            django_connection.connection = None
+                def render_fn(*args, **kwargs):
+                    return result
 
-    return acceptor
+                if not await wrap_async(lambda r: initiate(r, render_fn)):
+                    break
+
+        return acceptor
+    else:
+
+        def acceptor(initiate, ctx, lookahead):
+            for result in method(ctx, **lookahead):
+
+                def render_fn(*args, **kwargs):
+                    return result
+
+                if not wrap_async(lambda r: initiate(r, render_fn)):
+                    break
+
+        return acceptor
 
 
 Description = Dict[str, FieldDescription]
@@ -409,6 +469,52 @@ class SchemaDescription:
 SchemaInput = Union[dataclass, SchemaDescription]
 
 
+class PermissionDenied(Exception):
+    def __init__(
+        self,
+        status=403,
+        response_message="Permission denied",
+        headers=None,
+    ):
+        self.status = status
+        self.response_message = response_message
+        self.headers = {} if headers is None else headers
+        super().__init__()
+
+
+def wrap_auth(auth, auth_async):
+    if auth:
+        if auth_async:
+
+            @functools.wraps(auth)
+            async def wrapped_auth(headers):
+                try:
+                    return await auth(headers)
+                except PermissionDenied as e:
+                    return AuthRejection(
+                        status_code=e.status,
+                        message=e.response_message,
+                        headers=e.headers,
+                    )
+
+            return wrapped_auth
+        else:
+
+            @functools.wraps(auth)
+            def wrapped_auth(headers):
+                try:
+                    return auth(headers)
+                except PermissionDenied as e:
+                    return AuthRejection(
+                        status_code=e.status,
+                        message=e.response_message,
+                        headers=e.headers,
+                    )
+
+            return wrapped_auth
+    return auth
+
+
 def type_to_description(schema: SchemaInput) -> SchemaDescription:
     if isinstance(schema, SchemaDescription):
         return schema
@@ -419,17 +525,34 @@ def type_to_description(schema: SchemaInput) -> SchemaDescription:
     query = schema_fields["query"]
     mutation = schema_fields.get("mutation", None)
     subscription = schema_fields.get("subscription", None)
-    auth = schema_fields.get("auth", None)
+    auth = getattr(schema, "auth", None)
     auth_async = False
     if auth and inspect.iscoroutinefunction(auth):
         auth_async = True
 
-    load_aggro_type(query, all_types, input_types, False)
+    load_aggro_type(query, all_types, input_types, False, name="Query")
     if mutation:
-        load_aggro_type(mutation, all_types, input_types, False)
+        load_aggro_type(mutation, all_types, input_types, False, name="Mutation")
     if subscription:
-        load_aggro_type(subscription, all_types, input_types, False)
-    return SchemaDescription(all_types=all_types, input_types=input_types, auth_function=auth, auth_async=auth_async)
+        load_aggro_type(
+            subscription, all_types, input_types, False, name="Subscription"
+        )
+    return SchemaDescription(
+        all_types=all_types,
+        input_types=input_types,
+        auth_function=wrap_auth(auth, auth_async),
+        auth_async=auth_async,
+    )
+
+
+class GraphqlSubscription:
+    def __init__(self, rec):
+        self.rec = rec
+
+    def receive(self) -> Optional[Tuple[Optional[str], dict]]:
+        return wrap_async(
+            lambda rr: self.rec(rr),
+        )
 
 
 class GraphqlClient:
@@ -444,7 +567,11 @@ class GraphqlClient:
         return gql
 
     def query(
-            self, query: str, variables: Dict[str, Any], connection: PostgresConnection = None, auth_token: str = None
+        self,
+        query: str,
+        variables: Dict[str, Any],
+        connection: PostgresConnection = None,
+        auth_token: str = None,
     ) -> Any:
         conn = connection and connection.postgres_client
 
@@ -459,9 +586,29 @@ class GraphqlClient:
             join=True,
         )
 
+    def subscribe(
+        self,
+        query: str,
+        variables: Dict[str, Any],
+        connection: PostgresConnection = None,
+        auth_token: str = None,
+    ) -> GraphqlSubscription:
+        conn = connection and connection.postgres_client
+
+        """
+        Query the configured GraphQL schema.
+
+        Provide an optional connection object to use as the DB connection to query SQL.
+        If no connection is specified, a new connection will be used.
+        """
+        return wrap_async(
+            lambda rr: self.client().subscribe(rr, query, variables, conn, auth_token),
+            wrap_return=GraphqlSubscription,
+        )
+
 
 global_graphql = GraphqlClient()
 
 
-def internal_graphql(name: str = "default"):
-    return GraphqlClient(client_fn=lambda: rust_objects.global_internal_gql_getter(name))
+def named_client(name: str = "default"):
+    return GraphqlClient(client_fn=lambda: rust_objects.global_gql_getter.by_name(name))

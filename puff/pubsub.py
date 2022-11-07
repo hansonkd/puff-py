@@ -52,17 +52,13 @@ class PubSubConnection:
         """
         Publish a message on the channel as raw bytes.
         """
-        return wrap_async(
-            lambda rr: self.conn.publish_bytes(rr, channel, message)
-        )
+        return wrap_async(lambda rr: self.conn.publish_bytes(rr, channel, message))
 
     def publish_json(self, channel: str, message: Any) -> bool:
         """
         Encode a Python object into JSON and send it to the channel.
         """
-        return wrap_async(
-            lambda rr: self.conn.publish_json(rr, channel, message)
-        )
+        return wrap_async(lambda rr: self.conn.publish_json(rr, channel, message))
 
 
 class PubSubClient:

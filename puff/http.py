@@ -95,16 +95,11 @@ class HttpClient:
             return self.json(method, url, headers, json)
 
         def run_request(r):
-            def new_r(v, e):
-                if e is None:
-                    v = HttpResponse(v)
-                return r(v, e)
-
             return self.rust_http.request(
-                new_r, method, url, headers, body, data, files, timeout_ms
+                r, method, url, headers, body, data, files, timeout_ms
             )
 
-        return wrap_async(run_request)
+        return wrap_async(run_request, wrap_return=HttpResponse)
 
     def json(
         self, method: str, url: str, headers=None, json=None, timeout=DEFAULT_TIMEOUT
@@ -116,16 +111,9 @@ class HttpClient:
         """
 
         def run_json(r):
-            def new_r(v, e):
-                if e is None:
-                    v = HttpResponse(v)
-                return r(v, e)
+            return self.rust_http.request_json(r, method, url, headers, json, timeout)
 
-            return self.rust_http.request_json(
-                new_r, method, url, headers, json, timeout
-            )
-
-        return wrap_async(run_json)
+        return wrap_async(run_json, wrap_return=HttpResponse)
 
     def get(self, url: str, **kwargs) -> HttpResponse:
         return self.request("GET", url, **kwargs)
