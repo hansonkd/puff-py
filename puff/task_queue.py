@@ -1,3 +1,4 @@
+import functools
 from typing import Any, Optional
 import time
 import inspect
@@ -9,18 +10,24 @@ DEFAULT_TIMEOUT = 30 * 1000
 DEFAULT_KEEP_RESULTS_FOR = 5 * 60 * 1000
 
 
+def task(func):
+    func.__is_puff_task = True
+    return func
+
+
 def current_milli_time():
     return round(time.time() * 1000)
 
 
 class TaskQueue:
-    def __init__(self, rust_tq=None):
+    def __init__(self, rust_tq=None, client_fn=None):
         self.tq = rust_tq
+        self.client_fn = client_fn or rust_objects.global_task_queue_getter
 
     def client(self):
         tq = self.tq
         if self.tq is None:
-            self.tq = tq = rust_objects.global_task_queue_getter()
+            self.tq = tq = self.client_fn()
         return tq
 
     def add_task(
@@ -95,3 +102,7 @@ class TaskQueue:
 
 
 global_task_queue = TaskQueue()
+
+
+def named_client(name: str = "default"):
+    return TaskQueue(client_fn=lambda: rust_objects.global_task_queue_getter.by_name(name))

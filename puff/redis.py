@@ -3,13 +3,14 @@ from . import Bytelike, rust_objects, wrap_async
 
 
 class RedisClient:
-    def __init__(self, client=None):
+    def __init__(self, client=None, client_fn=None):
         self.redis = None
+        self.client_fn = client_fn or rust_objects.global_redis_getter
 
     def client(self):
         rc = self.redis
         if rc is None:
-            self.redis = rc = rust_objects.global_redis_getter()
+            self.redis = rc = self.client_fn()
         return rc
 
     def get(self, key: Bytelike) -> Optional[bytes]:
@@ -74,3 +75,7 @@ class RedisClient:
 
 
 global_redis = RedisClient()
+
+
+def named_client(name: str = "default"):
+    return RedisClient(client_fn=lambda: rust_objects.global_redis_getter.by_name(name))

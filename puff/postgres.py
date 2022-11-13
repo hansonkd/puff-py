@@ -163,13 +163,19 @@ class PostgresCursor:
         return self.last_query
 
 
+def get_client(dbname):
+    if dbname is None:
+        return rust_objects.global_postgres_getter()
+    return rust_objects.global_postgres_getter.by_name(dbname)
+
+
 class PostgresConnection:
     isolation_level = ISOLATION_LEVEL_DEFAULT
     server_version = 140000
 
-    def __init__(self, client=None, autocommit=False):
+    def __init__(self, client=None, autocommit=False, dbname=None):
         self._autocommit = autocommit
-        self.postgres_client = client or rust_objects.global_postgres_getter()
+        self.postgres_client = client or get_client(dbname)
 
     def __enter__(self):
         return self
@@ -260,7 +266,7 @@ def connect(*parameters, **kwargs) -> PostgresConnection:
     if this_connection_override is not None:
         real_kwargs["client"] = this_connection_override
 
-    valid_params = ["autocommit"]
+    valid_params = ["autocommit", "dbname"]
     for param in valid_params:
         if param in kwargs:
             real_kwargs[param] = kwargs[param]

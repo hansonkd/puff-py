@@ -62,8 +62,15 @@ class HttpResponse:
 
 
 class HttpClient:
-    def __init__(self, rust_http):
-        self.rust_http = rust_http
+    def __init__(self, client_fn=None):
+        self.rust_http = None
+        self.client_fn = client_fn or rust_objects.global_http_client_getter
+
+    def client(self):
+        c = self.rust_http
+        if c is None:
+            self.rust_http = c = self.client_fn()
+        return c
 
     def request(
         self,
@@ -95,7 +102,7 @@ class HttpClient:
             return self.json(method, url, headers, json)
 
         def run_request(r):
-            return self.rust_http.request(
+            return self.client().request(
                 r, method, url, headers, body, data, files, timeout_ms
             )
 
@@ -111,7 +118,7 @@ class HttpClient:
         """
 
         def run_json(r):
-            return self.rust_http.request_json(r, method, url, headers, json, timeout)
+            return self.client().request_json(r, method, url, headers, json, timeout)
 
         return wrap_async(run_json, wrap_return=HttpResponse)
 
@@ -137,4 +144,8 @@ class HttpClient:
         return self.request("OPTIONS", url, **kwargs)
 
 
-global_http_client = HttpClient(rust_objects.global_http_client_getter())
+global_http_client = HttpClient()
+
+
+def named_client(name: str = "default"):
+    return HttpClient(client_fn=lambda: rust_objects.global_http_client_getter.by_name(name))

@@ -15,7 +15,7 @@ class PubSubMessage:
 
 
 class PubSubConnection:
-    def __init__(self, conn):
+    def __init__(self, conn=None):
         self.conn = conn
 
     def who_am_i(self) -> str:
@@ -62,13 +62,14 @@ class PubSubConnection:
 
 
 class PubSubClient:
-    def __init__(self, client=None):
-        self.pubsub = client
+    def __init__(self, conn=None, client_fn=None):
+        self.conn = conn
+        self.client_fn = client_fn or rust_objects.global_pubsub_getter
 
     def client(self):
-        ps = self.pubsub
+        ps = self.conn
         if ps is None:
-            self.pubsub = ps = rust_objects.global_pubsub_getter()
+            self.conn = ps = self.client_fn()
         return ps
 
     def new_connection_id(self) -> str:
@@ -111,9 +112,6 @@ class PubSubClient:
         """
         Get a new PubSub connection.
         """
-        if self.pubsub is None:
-            self.pubsub = rust_objects.global_pubsub_getter()
-
         return PubSubConnection(self.client().connection())
 
     def connection_with_id(self, connection_id: str) -> PubSubConnection:
@@ -124,3 +122,7 @@ class PubSubClient:
 
 
 global_pubsub = PubSubClient()
+
+
+def named_client(name: str = "default"):
+    return PubSubClient(client_fn=lambda: rust_objects.global_pubsub_getter.by_name(name))
