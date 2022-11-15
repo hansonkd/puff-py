@@ -1,3 +1,4 @@
+import asyncio
 import collections.abc
 import functools
 import inspect
@@ -96,6 +97,7 @@ class FieldDescription:
     producer: Optional[Callable[[Any], Any]] = None
     acceptor: Optional[Callable[[Callable[[Any], None]], None]] = None
     depends_on: Optional[List[str]] = None
+    value_from_column: Optional[str] = None
     default: Any = None
 
 
@@ -265,6 +267,39 @@ def wrap_method(method, type_hints, is_async=False):
     return wrapped_method
 
 
+INSTANCE_KEY = "__self_instances"
+
+
+def wrap_self(method, field_mappings, klass, is_async):
+    all_fields = []
+    all_columns = []
+    for f, c in field_mappings:
+        all_fields.append(f)
+        all_columns.append(c)
+
+    if is_async:
+        async def inner(ctx, /, **kwargs):
+            cache = ctx.layer_cache()
+            if INSTANCE_KEY in cache:
+                instances = cache[INSTANCE_KEY]
+            else:
+                db_column_values = list(ctx.parent_values(all_columns))
+                instances = [klass(**dict(zip(all_fields, row)), **kwargs) for row in db_column_values]
+                cache[INSTANCE_KEY] = instances
+            return ..., await asyncio.gather(method(instance, ctx, **kwargs) for instance in instances)
+    else:
+        def inner(ctx, /, **kwargs):
+            cache = ctx.layer_cache()
+            if INSTANCE_KEY in cache:
+                instances = cache[INSTANCE_KEY]
+            else:
+                db_column_values = list(ctx.parent_values(all_columns))
+                instances = [klass(**dict(zip(all_fields, row)), **kwargs) for row in db_column_values]
+                cache[INSTANCE_KEY] = instances
+            return ..., [method(instance, ctx, **kwargs) for instance in instances]
+    return inner
+
+
 def load_aggro_type(t, all_types, input_types, is_input, name=None):
     type_name = name or get_type_name(t)
 
@@ -286,15 +321,21 @@ def load_aggro_type(t, all_types, input_types, is_input, name=None):
             return
         all_types[type_name] = properties
 
+    all_fields_and_cols = []
     for field in fields(t):
         field_t = field.type
 
         field_type = type_to_scalar(field_t, all_types, input_types, is_input)
         db_column = field.name
+        if field.metadata and "db_column" in field.metadata:
+            db_column = field.metadata["db_column"]
+
+        all_fields_and_cols.append((field.name, db_column))
         desc = FieldDescription(
             return_type=field_type,
             arguments={},
             depends_on=[db_column],
+            value_from_column=db_column,
             safe_without_context=True,
             default=field.default,
         )
@@ -303,7 +344,8 @@ def load_aggro_type(t, all_types, input_types, is_input, name=None):
     if is_input:
         return
 
-    method_list = inspect.getmembers(t, predicate=inspect.ismethod)
+    method_list = inspect.getmembers(t, predicate=inspect.ismethod) + inspect.getmembers(t, predicate=inspect.isfunction)
+
     for (method_name, _method) in method_list:
         if method_name.startswith("_"):
             continue
@@ -311,96 +353,106 @@ def load_aggro_type(t, all_types, input_types, is_input, name=None):
         type_hints = get_type_hints(method)
         signature = inspect.signature(method)
         params = signature.parameters
-        if method.__self__ is t:
-            arguments = {}
-            positional_only = []
-            for param_name, param in params.items():
-                default = None
-                if param.default != inspect.Parameter.empty:
-                    default = param.default
-                if param.kind == inspect.Parameter.POSITIONAL_ONLY:
-                    positional_only.append(param_name)
-                    continue
-                if param.kind == inspect.Parameter.POSITIONAL_OR_KEYWORD:
-                    annotation = param.annotation
-                    if annotation == inspect.Parameter.empty:
-                        raise Exception(
-                            f"Keyword argument for field {param_name} in {method_name} in type {t.__name__} does not have annotation"
-                        )
-                    param_t = annotation
-                    scalar_t = type_to_scalar(param_t, all_types, input_types, True)
-                    arguments[param_name] = ParameterDescription(
-                        param_type=scalar_t, default=default
-                    )
-                else:
+        is_self_method = False
+        is_class_method = getattr(method, "__self__", None) is t
+        arguments = {}
+        positional_only = []
+        for param_name, param in params.items():
+            default = None
+            if param.default != inspect.Parameter.empty:
+                default = param.default
+            if param.kind == inspect.Parameter.POSITIONAL_ONLY:
+                positional_only.append(param_name)
+                continue
+            if param.kind == inspect.Parameter.POSITIONAL_OR_KEYWORD:
+                annotation = param.annotation
+                if annotation == inspect.Parameter.empty:
                     raise Exception(
-                        f"Invalid Parameter {param_name} in {method_name} in type {t.__name__}"
+                        f"Keyword argument for field {param_name} in {method_name} in type {t.__name__} does not have annotation"
                     )
+                param_t = annotation
+                scalar_t = type_to_scalar(param_t, all_types, input_types, True)
+                arguments[param_name] = ParameterDescription(
+                    param_type=scalar_t, default=default
+                )
+            else:
+                raise Exception(
+                    f"Invalid Parameter {param_name} in {method_name} in type {t.__name__}"
+                )
 
-            if len(positional_only) != 1:
+        if is_class_method and len(positional_only) != 1:
+            raise Exception(
+                f"Graphql field expected exactly 1 positional only context arg, instead got {positional_only}"
+            )
+        elif not is_class_method:
+            if len(positional_only) == 1:
+                is_self_method = False
+            elif len(positional_only) == 2:
+                is_self_method = True
+            else:
                 raise Exception(
                     f"Graphql field expected exactly 1 positional only context arg, instead got {positional_only}"
                 )
 
-            if signature.return_annotation == inspect.Signature.empty:
-                raise Exception(f"Return typ for Graphql field {method_name} is empty")
+        if signature.return_annotation == inspect.Signature.empty:
+            raise Exception(f"Return typ for Graphql field {method_name} is empty")
 
-            return_t = signature.return_annotation
+        return_t = signature.return_annotation
+        origin = get_origin(return_t)
+        acceptor = None
+        is_async = inspect.iscoroutinefunction(method)
+        wrapped_method = wrap_method(method, type_hints, is_async=is_async)
+        if is_self_method:
+            wrapped_method = wrap_self(wrapped_method, all_fields_and_cols, t, is_async)
+        if origin in (
+            Iterator,
+            Iterable,
+            collections.abc.Iterable,
+            collections.abc.Iterator,
+        ):
+            iterable_args = get_args(return_t)
+            return_t = iterable_args[0]
             origin = get_origin(return_t)
-            acceptor = None
-            is_async = inspect.iscoroutinefunction(method)
-            wrapped_method = wrap_method(method, type_hints, is_async=is_async)
-            if origin in (
-                Iterator,
-                Iterable,
-                collections.abc.Iterable,
-                collections.abc.Iterator,
-            ):
-                iterable_args = get_args(return_t)
-                return_t = iterable_args[0]
-                origin = get_origin(return_t)
-                acceptor = make_acceptor(wrapped_method, is_async)
+            acceptor = make_acceptor(wrapped_method, is_async)
 
-            if origin in (Tuple, tuple):
-                tuple_args = get_args(return_t)
-                tuple_arg_len = len(tuple_args)
-                return_t = tuple_args[0]
-                if tuple_arg_len == 2:
-                    # It is an aligned python list
-                    pass
-                elif tuple_arg_len in (3, 5):
-                    if not (tuple_args[1] == str and get_origin(tuple_args[2]) == list):
-                        raise Exception(
-                            f"Expected the second argument of a tuple to be a string and the 3rd argument to be a list {method_name}: {tuple_args}"
-                        )
-                elif tuple_arg_len in (4,):
-                    if not (tuple_args[1] == list):
-                        raise Exception(
-                            f"Expected the second argument of a tuple to be a list {method_name}: {tuple_args}"
-                        )
-                else:
+        if origin in (Tuple, tuple):
+            tuple_args = get_args(return_t)
+            tuple_arg_len = len(tuple_args)
+            return_t = tuple_args[0]
+            if tuple_arg_len == 2:
+                # It is an aligned python list
+                pass
+            elif tuple_arg_len in (3, 5):
+                if not (tuple_args[1] == str and get_origin(tuple_args[2]) == list):
                     raise Exception(
-                        f"Invalid number of tuple arguments for return type of {method_name}: {tuple_args}"
+                        f"Expected the second argument of a tuple to be a string and the 3rd argument to be a list {method_name}: {tuple_args}"
                     )
+            elif tuple_arg_len in (4,):
+                if not (tuple_args[1] == list):
+                    raise Exception(
+                        f"Expected the second argument of a tuple to be a list {method_name}: {tuple_args}"
+                    )
+            else:
+                raise Exception(
+                    f"Invalid number of tuple arguments for return type of {method_name}: {tuple_args}"
+                )
 
-            depends_on = getattr(method, "depends_on", None)
-            safe_without_context = getattr(method, "safe_without_context", False)
+        depends_on = getattr(method, "depends_on", None)
+        if is_self_method:
+            depends_on = depends_on or []
+            depends_on += [c[1] for c in all_fields_and_cols]
+        safe_without_context = getattr(method, "safe_without_context", False)
 
-            wrapped_method = wrap_method(method, type_hints)
-
-            desc = FieldDescription(
-                return_type=type_to_scalar(return_t, all_types, input_types, is_input),
-                safe_without_context=safe_without_context,
-                arguments=arguments,
-                acceptor=acceptor,
-                producer=wrapped_method,
-                is_async=is_async,
-                depends_on=depends_on,
-            )
-            properties[method_name] = desc
-
-        else:
-            pass
+        desc = FieldDescription(
+            return_type=type_to_scalar(return_t, all_types, input_types, is_input),
+            safe_without_context=safe_without_context,
+            arguments=arguments,
+            acceptor=acceptor,
+            producer=wrapped_method,
+            is_async=is_async,
+            depends_on=depends_on,
+        )
+        properties[method_name] = desc
 
 
 class GraphQLContext:
@@ -414,6 +466,14 @@ class GraphQLContext:
     @property
     def connection(self):
         return self.ctx.connection()
+
+    @property
+    def required_columns(self):
+        return self.ctx.required_columns()
+
+    @property
+    def layer_cache(self):
+        return self.ctx.layer_cache()
 
     def parent_values(self, parent_fields):
         return self.ctx.parent_values(parent_fields)

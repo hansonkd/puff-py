@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "puff-py"
-version = "0.1.9"
+version = "0.1.10"
 description = "Python support for Puff"
 authors = ["Kyle Hanson <me@khanson.io>"]
 license = "MIT"
