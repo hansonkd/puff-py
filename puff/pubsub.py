@@ -125,4 +125,6 @@ global_pubsub = PubSubClient()
 
 
 def named_client(name: str = "default"):
-    return PubSubClient(client_fn=lambda: rust_objects.global_pubsub_getter.by_name(name))
+    return PubSubClient(
+        client_fn=lambda: rust_objects.global_pubsub_getter.by_name(name)
+    )

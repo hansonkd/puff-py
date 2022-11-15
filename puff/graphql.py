@@ -278,25 +278,37 @@ def wrap_self(method, field_mappings, klass, is_async):
         all_columns.append(c)
 
     if is_async:
+
         async def inner(ctx, /, **kwargs):
             cache = ctx.layer_cache()
             if INSTANCE_KEY in cache:
                 instances = cache[INSTANCE_KEY]
             else:
                 db_column_values = list(ctx.parent_values(all_columns))
-                instances = [klass(**dict(zip(all_fields, row)), **kwargs) for row in db_column_values]
+                instances = [
+                    klass(**dict(zip(all_fields, row)), **kwargs)
+                    for row in db_column_values
+                ]
                 cache[INSTANCE_KEY] = instances
-            return ..., await asyncio.gather(method(instance, ctx, **kwargs) for instance in instances)
+            return ..., await asyncio.gather(
+                method(instance, ctx, **kwargs) for instance in instances
+            )
+
     else:
+
         def inner(ctx, /, **kwargs):
             cache = ctx.layer_cache()
             if INSTANCE_KEY in cache:
                 instances = cache[INSTANCE_KEY]
             else:
                 db_column_values = list(ctx.parent_values(all_columns))
-                instances = [klass(**dict(zip(all_fields, row)), **kwargs) for row in db_column_values]
+                instances = [
+                    klass(**dict(zip(all_fields, row)), **kwargs)
+                    for row in db_column_values
+                ]
                 cache[INSTANCE_KEY] = instances
             return ..., [method(instance, ctx, **kwargs) for instance in instances]
+
     return inner
 
 
@@ -344,7 +356,9 @@ def load_aggro_type(t, all_types, input_types, is_input, name=None):
     if is_input:
         return
 
-    method_list = inspect.getmembers(t, predicate=inspect.ismethod) + inspect.getmembers(t, predicate=inspect.isfunction)
+    method_list = inspect.getmembers(
+        t, predicate=inspect.ismethod
+    ) + inspect.getmembers(t, predicate=inspect.isfunction)
 
     for (method_name, _method) in method_list:
         if method_name.startswith("_"):

@@ -105,4 +105,6 @@ global_task_queue = TaskQueue()
 
 
 def named_client(name: str = "default"):
-    return TaskQueue(client_fn=lambda: rust_objects.global_task_queue_getter.by_name(name))
+    return TaskQueue(
+        client_fn=lambda: rust_objects.global_task_queue_getter.by_name(name)
+    )

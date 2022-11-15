@@ -148,4 +148,6 @@ global_http_client = HttpClient()
 
 
 def named_client(name: str = "default"):
-    return HttpClient(client_fn=lambda: rust_objects.global_http_client_getter.by_name(name))
+    return HttpClient(
+        client_fn=lambda: rust_objects.global_http_client_getter.by_name(name)
+    )
